@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+
+# Conda
+.env
+.venv
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model files
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.onnx
+*.pkl
+
+# Logs
+logs/
+*.log
+
+# Python cache
+.cache/
+
+# Temporary
+temp/
+tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dataset
+dataset/
+
+# Large outputs
+results/*.png
+results/*.jpg
+results/*.pdf
+
+# Streamlit cache
+.streamlit/
+
+# Environment
+.env

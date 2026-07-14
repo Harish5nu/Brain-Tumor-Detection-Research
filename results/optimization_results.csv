@@ -1,0 +1,6 @@
+Config,Learning Rate,Batch Size,Optimizer,Best Val Acc
+LR_1e-4,0.0001,32,Adam,99.4
+LR_1e-3,0.001,32,Adam,99.6
+LR_1e-5,1e-05,32,Adam,99.0
+AdamW,0.0001,32,AdamW,99.0
+SGD,0.001,32,SGD,99.0
