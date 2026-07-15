@@ -1,0 +1,4 @@
+Model,BRISC Test Acc,Nickparvar Test Acc,Performance Drop
+EfficientNet,99.60%,95.50%,4.10%
+DenseNet121,99.60%,97.56%,2.04%
+Ensemble,99.60%,95.50%,4.10%
