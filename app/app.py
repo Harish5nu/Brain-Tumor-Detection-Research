@@ -26,6 +26,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 # Import config
 from config import MODELS_DIR, DEVICE, IMAGE_SIZE, MEAN, STD, CLASS_NAMES
 
+try:
+    import cv2
+except ImportError:
+    import sys
+    print("OpenCV not found, attempting to install...")
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
+    import cv2
 # ============================================
 # Page Configuration
 # ============================================
