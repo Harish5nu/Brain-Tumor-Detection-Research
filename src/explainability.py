@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import matplotlib.cm as cm
+import random
 
 from config import MODELS_DIR, RESULTS_DIR, DEVICE, IMAGE_SIZE, MEAN, STD
 from preprocessing import prepare_brisc_data, prepare_nickparvar_data
@@ -149,7 +150,7 @@ def overlay_heatmap(original_image, heatmap, alpha=0.6):
     
     return overlay
 
-def visualize_gradcam(image_path, save_name, target_class=None):
+def visualize_gradcam(image_path, save_name, dataset_name, target_class=None):
     """Generate and visualize Grad-CAM for a single image"""
     
     # Load and preprocess image
@@ -184,23 +185,13 @@ def visualize_gradcam(image_path, save_name, target_class=None):
                      fontweight='bold')
     axes[2].axis('off')
     
-    plt.suptitle(f"Grad-CAM Visualization\nFile: {os.path.basename(image_path)}", 
+    plt.suptitle(f"Grad-CAM Visualization\nDataset: {dataset_name} | File: {os.path.basename(image_path)}", 
                  fontsize=12, fontweight='bold')
     plt.tight_layout()
     plt.savefig(os.path.join(RESULTS_DIR, save_name), dpi=300)
     plt.show()
     
     return pred_class, confidence
-
-def get_sample_images(loader, label=0, num_samples=4):
-    """Get sample image paths from a dataloader"""
-    image_paths = []
-    for images, labels in loader:
-        for i, img in enumerate(images):
-            if labels[i] == label:
-                # Since we don't have paths in the dataloader, we need to load from test data
-                pass
-    return image_paths
 
 # ============================================
 # 4. Load Test Data
@@ -214,66 +205,95 @@ print(f"BRISC Test: {len(test_images)} images")
 print(f"Nickparvar Test: {len(nick_images)} images")
 
 # ============================================
-# 5. Visualize Grad-CAM on BRISC Test Images
+# 5. Random Sample Selection (NEW!)
 # ============================================
 
 print("\n" + "="*70)
-print("🖼️ GRAD-CAM ON BRISC TEST IMAGES")
+print("🎲 RANDOM SAMPLE SELECTION")
 print("="*70)
 
-# Get sample images for each class
-brisc_tumor_paths = [p for p, l in zip(test_images, test_labels) if l == 1]
-brisc_no_tumor_paths = [p for p, l in zip(test_images, test_labels) if l == 0]
+# Set random seed for reproducibility
+random.seed(42)
+
+def get_random_samples(image_paths, labels, class_label, num_samples=3):
+    """Randomly select images from a specific class"""
+    paths = [p for p, l in zip(image_paths, labels) if l == class_label]
+    if len(paths) < num_samples:
+        print(f"⚠️ Only {len(paths)} images available for class {class_label} (requested {num_samples})")
+        return random.sample(paths, len(paths))
+    return random.sample(paths, num_samples)
+
+# BRISC samples
+brisc_tumor_samples = get_random_samples(test_images, test_labels, 1, 3)
+brisc_no_tumor_samples = get_random_samples(test_images, test_labels, 0, 3)
+
+# Nickparvar samples
+nick_tumor_samples = get_random_samples(nick_images, nick_labels, 1, 3)
+nick_no_tumor_samples = get_random_samples(nick_images, nick_labels, 0, 3)
+
+print(f"\nBRISC Tumor Samples: {len(brisc_tumor_samples)}")
+print(f"BRISC No Tumor Samples: {len(brisc_no_tumor_samples)}")
+print(f"Nickparvar Tumor Samples: {len(nick_tumor_samples)}")
+print(f"Nickparvar No Tumor Samples: {len(nick_no_tumor_samples)}")
+
+# ============================================
+# 6. Visualize Grad-CAM on BRISC Samples
+# ============================================
+
+print("\n" + "="*70)
+print("🖼️ GRAD-CAM ON BRISC TEST IMAGES (RANDOM SAMPLES)")
+print("="*70)
 
 # Tumor samples
 print("\n📊 Tumor samples (BRISC):")
-for i, img_path in enumerate(brisc_tumor_paths[:3]):
+for i, img_path in enumerate(brisc_tumor_samples):
     print(f"  Image {i+1}: {os.path.basename(img_path)}")
     pred_class, confidence = visualize_gradcam(
         img_path, 
-        f"gradcam_brisc_tumor_{i+1}.png"
+        f"gradcam_brisc_tumor_{i+1}.png",
+        "BRISC"
     )
 
 # No Tumor samples
 print("\n📊 No Tumor samples (BRISC):")
-for i, img_path in enumerate(brisc_no_tumor_paths[:3]):
+for i, img_path in enumerate(brisc_no_tumor_samples):
     print(f"  Image {i+1}: {os.path.basename(img_path)}")
     pred_class, confidence = visualize_gradcam(
         img_path, 
-        f"gradcam_brisc_no_tumor_{i+1}.png"
+        f"gradcam_brisc_no_tumor_{i+1}.png",
+        "BRISC"
     )
 
 # ============================================
-# 6. Visualize Grad-CAM on Nickparvar Images
+# 7. Visualize Grad-CAM on Nickparvar Samples
 # ============================================
 
 print("\n" + "="*70)
-print("🖼️ GRAD-CAM ON NICKPARVAR TEST IMAGES")
+print("🖼️ GRAD-CAM ON NICKPARVAR TEST IMAGES (RANDOM SAMPLES)")
 print("="*70)
-
-nick_tumor_paths = [p for p, l in zip(nick_images, nick_labels) if l == 1]
-nick_no_tumor_paths = [p for p, l in zip(nick_images, nick_labels) if l == 0]
 
 # Tumor samples
 print("\n📊 Tumor samples (Nickparvar):")
-for i, img_path in enumerate(nick_tumor_paths[:3]):
+for i, img_path in enumerate(nick_tumor_samples):
     print(f"  Image {i+1}: {os.path.basename(img_path)}")
     pred_class, confidence = visualize_gradcam(
         img_path, 
-        f"gradcam_nickparvar_tumor_{i+1}.png"
+        f"gradcam_nickparvar_tumor_{i+1}.png",
+        "Nickparvar"
     )
 
 # No Tumor samples
 print("\n📊 No Tumor samples (Nickparvar):")
-for i, img_path in enumerate(nick_no_tumor_paths[:3]):
+for i, img_path in enumerate(nick_no_tumor_samples):
     print(f"  Image {i+1}: {os.path.basename(img_path)}")
     pred_class, confidence = visualize_gradcam(
         img_path, 
-        f"gradcam_nickparvar_no_tumor_{i+1}.png"
+        f"gradcam_nickparvar_no_tumor_{i+1}.png",
+        "Nickparvar"
     )
 
 # ============================================
-# 7. Comparison Grid
+# 8. Comparison Grid (Using Random Samples)
 # ============================================
 
 print("\n" + "="*70)
@@ -283,9 +303,13 @@ print("="*70)
 def create_comparison_grid():
     """Create a grid comparing Grad-CAM on BRISC vs Nickparvar"""
     
-    # Get one image from each dataset (tumor)
-    brisc_sample = brisc_tumor_paths[0] if brisc_tumor_paths else None
-    nick_sample = nick_tumor_paths[0] if nick_tumor_paths else None
+    # Get one random image from each dataset (tumor)
+    brisc_sample = brisc_tumor_samples[0] if brisc_tumor_samples else None
+    nick_sample = nick_tumor_samples[0] if nick_tumor_samples else None
+    
+    # Get one random no-tumor image from each dataset
+    brisc_no_sample = brisc_no_tumor_samples[0] if brisc_no_tumor_samples else None
+    nick_no_sample = nick_no_tumor_samples[0] if nick_no_tumor_samples else None
     
     if brisc_sample and nick_sample:
         fig, axes = plt.subplots(2, 4, figsize=(16, 10))
@@ -318,13 +342,18 @@ def create_comparison_grid():
             axes[1, i+1].set_title("Nickparvar: Grad-CAM", fontweight='bold')
             axes[1, i+1].axis('off')
         
-        plt.suptitle("Grad-CAM Comparison: BRISC vs Nickparvar", fontsize=14, fontweight='bold')
+        plt.suptitle("Grad-CAM Comparison: BRISC vs Nickparvar (Random Samples)", 
+                    fontsize=14, fontweight='bold')
         plt.tight_layout()
         plt.savefig(os.path.join(RESULTS_DIR, "gradcam_comparison_grid.png"), dpi=300)
         plt.show()
         print(f"✅ Grad-CAM comparison grid saved to: {RESULTS_DIR}/gradcam_comparison_grid.png")
 
 create_comparison_grid()
+
+# ============================================
+# 9. Summary
+# ============================================
 
 print("\n" + "="*70)
 print("✅ GRAD-CAM VISUALIZATION COMPLETE!")
@@ -333,11 +362,17 @@ print(f"""
 All Grad-CAM visualizations saved to: {RESULTS_DIR}
 
 Files created:
-  - gradcam_brisc_tumor_*.png
-  - gradcam_brisc_no_tumor_*.png
-  - gradcam_nickparvar_tumor_*.png
-  - gradcam_nickparvar_no_tumor_*.png
+  - gradcam_brisc_tumor_*.png      (Random BRISC tumor samples)
+  - gradcam_brisc_no_tumor_*.png   (Random BRISC healthy samples)
+  - gradcam_nickparvar_tumor_*.png (Random Nickparvar tumor samples)
+  - gradcam_nickparvar_no_tumor_*.png (Random Nickparvar healthy samples)
   - gradcam_comparison_grid.png
+
+Random Selection Details:
+  - BRISC Tumor:     {[os.path.basename(p) for p in brisc_tumor_samples]}
+  - BRISC No Tumor:  {[os.path.basename(p) for p in brisc_no_tumor_samples]}
+  - Nickparvar Tumor:    {[os.path.basename(p) for p in nick_tumor_samples]}
+  - Nickparvar No Tumor: {[os.path.basename(p) for p in nick_no_tumor_samples]}
 
 Interpretation:
   🔴 Red/Hot areas = Where the model focused
