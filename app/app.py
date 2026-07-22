@@ -228,61 +228,56 @@ with st.sidebar:
 
 @st.cache_resource
 def download_model_file():
-    """Download model file if not present"""
+    """Download model file from Hugging Face"""
     model_path = os.path.join(MODELS_DIR, "optimized_LR_1e-3.pth")
     
     # Check if model already exists
     if os.path.exists(model_path):
-        print(f"✅ Model found at: {model_path}")
-        return model_path
+        file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
+        if file_size > 20:  # Valid model file should be > 20MB
+            print(f"✅ Model found at: {model_path} ({file_size:.1f} MB)")
+            return model_path
+        else:
+            print(f"⚠️ Existing model file is too small ({file_size:.1f} MB), re-downloading...")
+            os.remove(model_path)
     
     # Create models directory
     os.makedirs(MODELS_DIR, exist_ok=True)
     
-    # Try multiple sources
-    urls = [
-        # GitHub raw URL (try this first)
-        "https://raw.githubusercontent.com/Harish5nu/Brain-Tumor-Detection-Research/main/models/optimized_LR_1e-3.pth",
-        # Alternative GitHub LFS URL
-        "https://media.githubusercontent.com/media/Harish5nu/Brain-Tumor-Detection-Research/main/models/optimized_LR_1e-3.pth",
-    ]
+    # Hugging Face model URL (replace with your actual username and repo)
+    # Format: https://huggingface.co/USERNAME/REPO_NAME/resolve/main/FILENAME
+    url = "https://huggingface.co/Harish5nu/brain-tumor-detector/resolve/main/optimized_LR_1e-3.pth"
     
-    for url in urls:
-        try:
-            print(f"📥 Trying to download from: {url}")
-            response = requests.get(url, stream=True, timeout=60)
+    try:
+        print(f"📥 Downloading model from Hugging Face: {url}")
+        response = requests.get(url, stream=True, timeout=120)
+        
+        if response.status_code == 200:
+            total_size = int(response.headers.get('content-length', 0))
+            print(f"📊 File size: {total_size / (1024*1024):.1f} MB")
             
-            if response.status_code == 200:
-                total_size = int(response.headers.get('content-length', 0))
-                
-                with open(model_path, 'wb') as f:
-                    progress_bar = st.progress(0)
-                    downloaded = 0
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_size > 0:
-                            progress = min(1.0, downloaded / total_size)
-                            progress_bar.progress(progress)
-                    progress_bar.progress(1.0)
-                
-                print("✅ Model downloaded successfully!")
-                return model_path
-            else:
-                print(f"❌ Failed: Status {response.status_code}")
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            continue
-    
-    # If all downloads fail, check for any .pth file
-    existing_models = [f for f in os.listdir(MODELS_DIR) if f.endswith('.pth')]
-    if existing_models:
-        fallback_path = os.path.join(MODELS_DIR, existing_models[0])
-        print(f"⚠️ Using fallback: {fallback_path}")
-        return fallback_path
-    
-    st.error("❌ No model file found! Please upload the model file to GitHub.")
-    raise FileNotFoundError("No model file found!")
+            with open(model_path, 'wb') as f:
+                progress_bar = st.progress(0)
+                downloaded = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_size > 0:
+                        progress = min(1.0, downloaded / total_size)
+                        progress_bar.progress(progress)
+                progress_bar.progress(1.0)
+            
+            file_size = os.path.getsize(model_path) / (1024 * 1024)
+            print(f"✅ Model downloaded successfully! ({file_size:.1f} MB)")
+            return model_path
+        else:
+            st.error(f"❌ Failed to download: HTTP {response.status_code}")
+            raise Exception(f"Download failed with status {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"❌ Error downloading model: {e}")
+        raise
+
 
 # ============================================
 # Load Model
