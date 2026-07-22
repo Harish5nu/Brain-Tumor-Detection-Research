@@ -246,7 +246,7 @@ def download_model_file():
     
     # Hugging Face model URL (replace with your actual username and repo)
     # Format: https://huggingface.co/USERNAME/REPO_NAME/resolve/main/FILENAME
-    url = "https://huggingface.co/Harish5nu/brain-tumor-detector/resolve/main/optimized_LR_1e-3.pth"
+    url = "https://huggingface.co/harish5nu/Brain-tumor-research/blob/main/optimized_LR_1e-3.pth"
     
     try:
         print(f"📥 Downloading model from Hugging Face: {url}")
