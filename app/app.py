@@ -309,7 +309,7 @@ def load_model():
         )
         
         try:
-            state_dict = torch.load(model_path, map_location=DEVICE)
+            state_dict = torch.load(model_path, map_location=DEVICE, weights_only=False)
             
             # Handle 'densenet.' prefix
             new_state_dict = {}
