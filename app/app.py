@@ -233,7 +233,7 @@ def download_model_file():
     
     # Check if model already exists
     if os.path.exists(model_path):
-        file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
+        file_size = os.path.getsize(model_path) / (1024 * 1024)
         if file_size > 20:  # Valid model file should be > 20MB
             print(f"✅ Model found at: {model_path} ({file_size:.1f} MB)")
             return model_path
@@ -244,12 +244,12 @@ def download_model_file():
     # Create models directory
     os.makedirs(MODELS_DIR, exist_ok=True)
     
-    # Hugging Face model URL (replace with your actual username and repo)
-    # Format: https://huggingface.co/USERNAME/REPO_NAME/resolve/main/FILENAME
-    url = "https://huggingface.co/harish5nu/Brain-tumor-research/blob/main/optimized_LR_1e-3.pth"
+    # CORRECT URL - using /resolve/main/ NOT /blob/main/
+    url = "https://huggingface.co/harish5nu/Brain-tumor-research/resolve/main/optimized_LR_1e-3.pth"
     
     try:
-        print(f"📥 Downloading model from Hugging Face: {url}")
+        print(f"📥 Downloading model from: {url}")
+        
         response = requests.get(url, stream=True, timeout=120)
         
         if response.status_code == 200:
@@ -260,24 +260,24 @@ def download_model_file():
                 progress_bar = st.progress(0)
                 downloaded = 0
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if total_size > 0:
-                        progress = min(1.0, downloaded / total_size)
-                        progress_bar.progress(progress)
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = min(1.0, downloaded / total_size)
+                            progress_bar.progress(progress)
                 progress_bar.progress(1.0)
             
             file_size = os.path.getsize(model_path) / (1024 * 1024)
             print(f"✅ Model downloaded successfully! ({file_size:.1f} MB)")
             return model_path
         else:
-            st.error(f"❌ Failed to download: HTTP {response.status_code}")
+            st.error(f"❌ HTTP Error: {response.status_code}")
             raise Exception(f"Download failed with status {response.status_code}")
             
     except Exception as e:
         st.error(f"❌ Error downloading model: {e}")
         raise
-
 
 # ============================================
 # Load Model
