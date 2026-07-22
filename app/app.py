@@ -7,33 +7,38 @@ import os
 import sys
 import torch
 import torch.nn as nn
-from torchvision import models, transforms
+from torchvision import models
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from PIL import Image
 import streamlit as st
-import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import time
-from datetime import datetime
+import requests
+import warnings
+warnings.filterwarnings('ignore')
 
+# ============================================
 # Add src to path
+# ============================================
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# Import config
-from config import MODELS_DIR, DEVICE, IMAGE_SIZE, MEAN, STD, CLASS_NAMES
-
+# Try to import config, fallback to hardcoded values
 try:
-    import cv2
+    from config import MODELS_DIR, DEVICE, IMAGE_SIZE, MEAN, STD, CLASS_NAMES
 except ImportError:
-    import sys
-    print("OpenCV not found, attempting to install...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
-    import cv2
+    # Fallback hardcoded values
+    MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'models')
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    IMAGE_SIZE = 224
+    MEAN = [0.485, 0.456, 0.406]
+    STD = [0.229, 0.224, 0.225]
+    CLASS_NAMES = ['No Tumor', 'Tumor']
+    print(f"Using fallback config, DEVICE: {DEVICE}")
+
 # ============================================
 # Page Configuration
 # ============================================
@@ -51,7 +56,6 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* Main Styles */
     .main-title {
         font-size: 2.8rem;
         font-weight: 800;
@@ -67,8 +71,6 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
-    
-    /* Prediction Boxes */
     .prediction-box {
         padding: 1.5rem;
         border-radius: 15px;
@@ -95,8 +97,6 @@ st.markdown("""
         opacity: 0.9;
         margin: 0;
     }
-    
-    /* Metric Cards */
     .metric-card {
         background: white;
         border-radius: 12px;
@@ -123,8 +123,6 @@ st.markdown("""
         color: #7f8fa6;
         margin-top: 0.3rem;
     }
-    
-    /* Confidence Bar */
     .confidence-bar {
         height: 8px;
         border-radius: 4px;
@@ -137,36 +135,6 @@ st.markdown("""
         border-radius: 4px;
         transition: width 1s ease;
     }
-    
-    /* Upload Box */
-    .upload-box {
-        border: 2px dashed #dce1e8;
-        border-radius: 15px;
-        padding: 2rem;
-        text-align: center;
-        background: #f8f9fa;
-        transition: all 0.3s;
-    }
-    .upload-box:hover {
-        border-color: #4a90d9;
-        background: #f0f4ff;
-    }
-    
-    /* Animations */
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.02); }
-        100% { transform: scale(1); }
-    }
-    .pulse {
-        animation: pulse 1.5s ease-in-out 2;
-    }
-    
-    /* Footer */
     .footer {
         text-align: center;
         color: #7f8fa6;
@@ -175,26 +143,6 @@ st.markdown("""
         border-top: 1px solid #e8ecf1;
         font-size: 0.9rem;
     }
-    
-    /* Sidebar */
-    .sidebar-section {
-        padding: 0.5rem 0;
-        border-bottom: 1px solid #e8ecf1;
-        margin-bottom: 0.5rem;
-    }
-    
-    /* Status Badge */
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
-    .badge-success { background: #4ecdc4; color: white; }
-    .badge-danger { background: #ff6b6b; color: white; }
-    .badge-warning { background: #f39c12; color: white; }
-    
     .stButton > button {
         background: linear-gradient(135deg, #4a90d9, #357abd);
         color: white;
@@ -209,6 +157,10 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 15px rgba(74, 144, 217, 0.4);
         color: white;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -226,7 +178,6 @@ st.markdown('<p class="sub-title">Powered by Deep Learning · Grad-CAM Explainab
 
 with st.sidebar:
     st.markdown("### 🏥 About This System")
-    
     st.markdown("""
     This AI-powered system detects brain tumors from MRI scans using a **DenseNet121** model trained on 5,000+ medical images.
     
@@ -272,42 +223,114 @@ with st.sidebar:
     st.markdown("Cross-Dataset Generalization & Uncertainty-Aware Explainable Learning for Brain Tumor MRI Analysis")
 
 # ============================================
-# Load Models (Cached)
+# Model Download Function
+# ============================================
+
+@st.cache_resource
+def download_model_file():
+    """Download model file if not present"""
+    model_path = os.path.join(MODELS_DIR, "optimized_LR_1e-3.pth")
+    
+    # Check if model already exists
+    if os.path.exists(model_path):
+        print(f"✅ Model found at: {model_path}")
+        return model_path
+    
+    # Create models directory
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    
+    # Try multiple sources
+    urls = [
+        # GitHub raw URL (try this first)
+        "https://raw.githubusercontent.com/Harish5nu/Brain-Tumor-Detection-Research/main/models/optimized_LR_1e-3.pth",
+        # Alternative GitHub LFS URL
+        "https://media.githubusercontent.com/media/Harish5nu/Brain-Tumor-Detection-Research/main/models/optimized_LR_1e-3.pth",
+    ]
+    
+    for url in urls:
+        try:
+            print(f"📥 Trying to download from: {url}")
+            response = requests.get(url, stream=True, timeout=60)
+            
+            if response.status_code == 200:
+                total_size = int(response.headers.get('content-length', 0))
+                
+                with open(model_path, 'wb') as f:
+                    progress_bar = st.progress(0)
+                    downloaded = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = min(1.0, downloaded / total_size)
+                            progress_bar.progress(progress)
+                    progress_bar.progress(1.0)
+                
+                print("✅ Model downloaded successfully!")
+                return model_path
+            else:
+                print(f"❌ Failed: Status {response.status_code}")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+            continue
+    
+    # If all downloads fail, check for any .pth file
+    existing_models = [f for f in os.listdir(MODELS_DIR) if f.endswith('.pth')]
+    if existing_models:
+        fallback_path = os.path.join(MODELS_DIR, existing_models[0])
+        print(f"⚠️ Using fallback: {fallback_path}")
+        return fallback_path
+    
+    st.error("❌ No model file found! Please upload the model file to GitHub.")
+    raise FileNotFoundError("No model file found!")
+
+# ============================================
+# Load Model
 # ============================================
 
 @st.cache_resource
 def load_model():
     """Load trained DenseNet121 model"""
     
-    model = models.densenet121(weights=None)
+    # Download model if not present
+    with st.spinner("📥 Downloading model file... This may take a few minutes."):
+        model_path = download_model_file()
     
-    num_features = model.classifier.in_features
-    model.classifier = nn.Sequential(
-        nn.Dropout(0.3),
-        nn.Linear(num_features, 512),
-        nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(512, 2)
-    )
-    
-    state_dict = torch.load(
-        os.path.join(MODELS_DIR, "optimized_LR_1e-3.pth"),
-        map_location=DEVICE
-    )
-    
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        if key.startswith('densenet.'):
-            new_key = key.replace('densenet.', '')
-            new_state_dict[new_key] = value
-        else:
-            new_state_dict[key] = value
-    
-    model.load_state_dict(new_state_dict, strict=False)
-    model = model.to(DEVICE)
-    model.eval()
-    
-    return model
+    with st.spinner("🧠 Loading model..."):
+        model = models.densenet121(weights=None)
+        
+        num_features = model.classifier.in_features
+        model.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(num_features, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, 2)
+        )
+        
+        try:
+            state_dict = torch.load(model_path, map_location=DEVICE)
+            
+            # Handle 'densenet.' prefix
+            new_state_dict = {}
+            for key, value in state_dict.items():
+                if key.startswith('densenet.'):
+                    new_key = key.replace('densenet.', '')
+                    new_state_dict[new_key] = value
+                else:
+                    new_state_dict[key] = value
+            
+            model.load_state_dict(new_state_dict, strict=False)
+        except Exception as e:
+            st.error(f"Error loading model: {e}")
+            # Try loading directly
+            model.load_state_dict(torch.load(model_path, map_location=DEVICE), strict=False)
+        
+        model = model.to(DEVICE)
+        model.eval()
+        
+        st.success("✅ Model loaded successfully!")
+        return model
 
 # ============================================
 # Grad-CAM Class
@@ -369,7 +392,7 @@ def preprocess_image(image):
         image = image.convert('RGB')
     
     image = image.resize((IMAGE_SIZE, IMAGE_SIZE))
-    image_np = np.array(image, dtype=np.float32) / 255.0  # FIXED: explicit float32
+    image_np = np.array(image, dtype=np.float32) / 255.0
     
     mean = np.array(MEAN, dtype=np.float32).reshape(3, 1, 1)
     std = np.array(STD, dtype=np.float32).reshape(3, 1, 1)
@@ -451,8 +474,12 @@ def overlay_heatmap(image_np, heatmap, alpha=0.5):
 
 def main():
     # Load model
-    with st.spinner("🧠 Loading AI model... This may take a few seconds."):
+    try:
         model = load_model()
+    except Exception as e:
+        st.error(f"❌ Error loading model: {e}")
+        st.info("Please check the logs for more details.")
+        return
     
     # File Upload
     uploaded_file = st.file_uploader(
@@ -476,14 +503,11 @@ def main():
         with col_controls:
             st.markdown("### 🎯 Analysis Controls")
             
-            # Show file info
             st.markdown(f"**File:** {uploaded_file.name}")
             st.markdown(f"**Format:** {uploaded_file.type}")
             
-            # Analyze button
             if st.button("🔍 Analyze Image", type="primary", use_container_width=True):
                 with st.spinner("🧠 Analyzing image... This may take a moment."):
-                    # Start timing
                     start_time = time.time()
                     
                     # Preprocess
@@ -500,10 +524,9 @@ def main():
                     heatmap = generate_gradcam(model, image_tensor)
                     overlay = overlay_heatmap(image_np, heatmap)
                     
-                    # End timing
                     inference_time = time.time() - start_time
                     
-                    # --- Display Results ---
+                    # Display Results
                     st.markdown("---")
                     st.markdown("### 📊 Analysis Results")
                     
@@ -523,13 +546,13 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Metrics Row
+                    # Metrics
                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
                     
                     with col_m1:
                         st.markdown(f"""
                         <div class="metric-card">
-                            <div class="metric-value { 'good' if confidence > 0.8 else 'warning' }">{confidence*100:.1f}%</div>
+                            <div class="metric-value {'good' if confidence > 0.8 else 'warning'}">{confidence*100:.1f}%</div>
                             <div class="metric-label">🎯 Confidence</div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -537,7 +560,7 @@ def main():
                     with col_m2:
                         st.markdown(f"""
                         <div class="metric-card">
-                            <div class="metric-value { 'good' if uncertainty < 0.15 else 'warning' }">{uncertainty*100:.2f}%</div>
+                            <div class="metric-value {'good' if uncertainty < 0.15 else 'warning'}">{uncertainty*100:.2f}%</div>
                             <div class="metric-label">🔍 Uncertainty</div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -574,7 +597,7 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Grad-CAM Section
+                    # Grad-CAM
                     st.markdown("---")
                     st.markdown("### 🔴 Grad-CAM Explainability")
                     st.caption("The heatmap shows which regions the model focused on when making its decision.")
@@ -598,18 +621,14 @@ def main():
                     st.markdown("### 📈 Prediction Distribution (Monte Carlo Dropout)")
                     st.caption("30 forward passes with dropout to measure prediction stability")
                     
-                    # Plotly Histogram
                     fig = go.Figure()
-                    
                     fig.add_trace(go.Histogram(
                         x=probs,
                         nbinsx=20,
                         name="Predictions",
                         marker_color='#4a90d9',
-                        opacity=0.8,
-                        hovertemplate="Probability: %{x:.3f}<br>Count: %{y}<extra></extra>"
+                        opacity=0.8
                     ))
-                    
                     fig.add_vline(
                         x=mean_prob,
                         line_dash="dash",
@@ -618,7 +637,6 @@ def main():
                         annotation_text=f"Mean: {mean_prob:.3f}",
                         annotation_position="top"
                     )
-                    
                     fig.update_layout(
                         title="Distribution of Tumor Probabilities (30 MC Dropout Samples)",
                         xaxis_title="Tumor Probability",
@@ -628,7 +646,6 @@ def main():
                         template="plotly_white",
                         bargap=0.05
                     )
-                    
                     st.plotly_chart(fig, use_container_width=True)
                     
                     # Details Section
@@ -652,7 +669,6 @@ def main():
                         st.markdown(f"- **Uncertainty Level:** `{uncertainty_status}`")
                         st.markdown(f"- **Samples:** 30 Monte Carlo Dropout")
                     
-                    # Additional info
                     st.info(f"✅ Analysis completed in {inference_time:.2f} seconds using {DEVICE}")
 
 # ============================================
